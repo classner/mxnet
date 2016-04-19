@@ -95,7 +95,9 @@ class SoftmaxOutputOp : public Operator {
       int n = out_data[softmaxout_enum::kOut].size(0);
       int k = out_data[softmaxout_enum::kOut].size(1);
       Shape<3> s3 = Shape3(n, k, static_cast<int>(out_data[softmaxout_enum::kOut].Size()/n/k));
-      Tensor<xpu, 2, DType> label = in_data[softmaxout_enum::kLabel].FlatTo2D<xpu, DType>(s);
+      Shape<2> sl = Shape2(n, static_cast<int>(out_data[softmaxout_enum::kOut].Size()/n/k));
+      Tensor<xpu, 2, DType> label =
+          in_data[softmaxout_enum::kLabel].get_with_shape<xpu, 2, DType>(sl, s);
       Tensor<xpu, 3, DType> out =
           out_data[softmaxout_enum::kOut].get_with_shape<xpu, 3, DType>(s3, s);
       Tensor<xpu, 3, DType> grad =
@@ -146,10 +148,11 @@ class SoftmaxOutputProp : public OperatorProperty {
     const TShape &dshape = in_shape->at(0);
     if (dshape.ndim() == 0) return false;
     if (param_.multi_output) {
-      // Temporarily disabled!
-      // TODO: make better.
-      //SHAPE_ASSIGN_CHECK(*in_shape, softmaxout_enum::kLabel,
-      //                   Shape2(dshape[0], dshape.Size()/dshape[0]/dshape[1]));
+      /*      if ((*in_shape)[0] != dshape[0] || (*in_shape)[1] != dshape[1] ||
+          dshape.Size() / dshape[0] / dshape[1]) {
+        SHAPE_ASSIGN_CHECK(*in_shape, softmaxout_enum::kLabel,
+                           Shape2(dshape[0], dshape.Size()/dshape[0]/dshape[1]));
+                           }*/
     } else {
       SHAPE_ASSIGN_CHECK(*in_shape, softmaxout_enum::kLabel, Shape1(dshape[0]));
     }
