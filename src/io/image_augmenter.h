@@ -182,8 +182,15 @@ class ImageAugmenter {
       if (rotate_list_.size() > 0) {
         angle = rotate_list_[std::uniform_int_distribution<int>(0, rotate_list_.size() - 1)(*prnd)];
       }
-      float a = cos(angle / 180.0 * M_PI);
-      float b = sin(angle / 180.0 * M_PI);
+      float a = cos(angle / 180. * M_PI);
+      float b = sin(angle / 180. * M_PI);
+      float br = abs(b * float(src.rows));
+      float rb = abs(a * float(src.rows));
+      float bl = abs(a * float(src.cols));
+      float lb = abs(b * float(src.cols));
+      float new_w = bl + br;
+      float new_h = lb + rb;
+      
       // scale
       float scale = rand_uniform(*prnd) *
           (param_.max_random_scale - param_.min_random_scale) + param_.min_random_scale;
@@ -194,9 +201,9 @@ class ImageAugmenter {
       float ws = ratio * hs;
       // new width and height
       float new_width = std::max(param_.min_img_size,
-                                 std::min(param_.max_img_size, scale * src.cols));
+                                 std::min(param_.max_img_size, scale * new_w));
       float new_height = std::max(param_.min_img_size,
-                                  std::min(param_.max_img_size, scale * src.rows));
+                                  std::min(param_.max_img_size, scale * new_h));
       cv::Mat M(2, 3, CV_32F);
       M.at<float>(0, 0) = hs * a - s * b * ws;
       M.at<float>(1, 0) = -b * ws;
@@ -206,15 +213,18 @@ class ImageAugmenter {
       float ori_center_height = M.at<float>(1, 0) * src.cols + M.at<float>(1, 1) * src.rows;
       M.at<float>(0, 2) = (new_width - ori_center_width) / 2;
       M.at<float>(1, 2) = (new_height - ori_center_height) / 2;
-      CHECK((param_.inter_method >= 1 && param_.inter_method <= 4) ||
+      CHECK((param_.inter_method >= 0 && param_.inter_method <= 4) ||
          (param_.inter_method >= 9 && param_.inter_method <= 10))
           << "invalid inter_method: valid value 0,1,2,3,9,10";
       int interpolation_method = GetInterMethod(param_.inter_method,
                      src.cols, src.rows, new_width, new_height, prnd);
-      cv::warpAffine(src, temp_, M, cv::Size(new_width, new_height),
+      cv::warpAffine(src,
+                     temp_,
+                     M,
+                     cv::Size(new_width, new_height),
                      interpolation_method,
                      cv::BORDER_CONSTANT,
-                     cv::Scalar(param_.fill_value, param_.fill_value, param_.fill_value));
+                     cv::Scalar::all(param_.fill_value));
       res = temp_;
     } else {
       res = src;
@@ -241,19 +251,37 @@ class ImageAugmenter {
       cv::resize(res(roi), res, cv::Size(param_.data_shape[2], param_.data_shape[1])
                 , 0, 0, interpolation_method);
     } else {
-      CHECK(static_cast<index_t>(res.rows) >= param_.data_shape[1]
-            && static_cast<index_t>(res.cols) >= param_.data_shape[2])
-          << "input image size smaller than input shape";
-      index_t y = res.rows - param_.data_shape[1];
-      index_t x = res.cols - param_.data_shape[2];
+      index_t y = std::max<std::ptrdiff_t>(
+          res.rows -
+          static_cast<std::ptrdiff_t>(param_.data_shape[1]), 0);
+      index_t x = std::max<std::ptrdiff_t>(
+          res.cols -
+          static_cast<std::ptrdiff_t>(param_.data_shape[2]), 0);
       if (param_.rand_crop != 0) {
         y = std::uniform_int_distribution<index_t>(0, y)(*prnd);
         x = std::uniform_int_distribution<index_t>(0, x)(*prnd);
       } else {
         y /= 2; x /= 2;
       }
-      cv::Rect roi(x, y, param_.data_shape[2], param_.data_shape[1]);
+      cv::Rect roi(x, y,
+                   std::min<index_t>(param_.data_shape[2], res.cols),
+                   std::min<index_t>(param_.data_shape[1], res.rows));
       res = res(roi);
+      if (static_cast<index_t>(res.rows) < param_.data_shape[1] ||
+          static_cast<index_t>(res.cols) < param_.data_shape[2]) {
+        cv::Mat filled(param_.data_shape[2],
+                       param_.data_shape[1],
+                       src.channels() < 3 ? CV_8UC1 : CV_8UC3,
+                       cv::Scalar::all(param_.fill_value));
+
+        float fill_y = static_cast<float>(param_.data_shape[1] - res.rows) / 2.f;
+        float fill_x = static_cast<float>(param_.data_shape[2] - res.cols) / 2.f;
+        
+        cv::Rect fill_roi(floor(fill_x), floor(fill_y),
+                          res.cols, res.rows);
+        res.copyTo(filled(fill_roi));
+        res = filled;
+      }
     }
 
     // color space augmentation

@@ -146,8 +146,10 @@ class SoftmaxOutputProp : public OperatorProperty {
     const TShape &dshape = in_shape->at(0);
     if (dshape.ndim() == 0) return false;
     if (param_.multi_output) {
-      SHAPE_ASSIGN_CHECK(*in_shape, softmaxout_enum::kLabel,
-                         Shape2(dshape[0], dshape.Size()/dshape[0]/dshape[1]));
+      // Temporarily disabled!
+      // TODO: make better.
+      //SHAPE_ASSIGN_CHECK(*in_shape, softmaxout_enum::kLabel,
+      //                   Shape2(dshape[0], dshape.Size()/dshape[0]/dshape[1]));
     } else {
       SHAPE_ASSIGN_CHECK(*in_shape, softmaxout_enum::kLabel, Shape1(dshape[0]));
     }

@@ -31,6 +31,7 @@ struct BatchNormParam : public dmlc::Parameter<BatchNormParam> {
   float eps;
   float momentum;
   bool fix_gamma;
+  bool use_global_stats;
   DMLC_DECLARE_PARAMETER(BatchNormParam) {
     DMLC_DECLARE_FIELD(eps).set_default(1e-3f)
     .describe("Epsilon to prevent div 0");
@@ -38,6 +39,8 @@ struct BatchNormParam : public dmlc::Parameter<BatchNormParam> {
     .describe("Momentum for moving average");
     DMLC_DECLARE_FIELD(fix_gamma).set_default(true)
     .describe("Fix gamma while training");
+    DMLC_DECLARE_FIELD(use_global_stats).set_default(false)
+    .describe("Use globally accumulated statistics.");
   }
 };
 
@@ -58,7 +61,7 @@ class BatchNormOp : public Operator {
     const size_t expected_out = this->param_.fix_gamma ? 3 : 4;
     CHECK_EQ(in_data.size(), 3);
     CHECK_EQ(aux_states.size(), 2);
-    if (ctx.is_train) {
+    if (ctx.is_train || !this->param_.use_global_stats) {
       CHECK_EQ(out_data.size(), expected_out);
       CHECK_EQ(req.size(), expected_out);
     } else {
@@ -93,7 +96,7 @@ class BatchNormOp : public Operator {
     Tensor<xpu, 1> moving_mean = aux_states[batchnorm::kMovingMean].get<xpu, 1, real_t>(s);
     Tensor<xpu, 1> moving_var = aux_states[batchnorm::kMovingVar].get<xpu, 1, real_t>(s);
     // cal
-    if (ctx.is_train) {
+    if (ctx.is_train || !this->param_.use_global_stats) {
       Tensor<xpu, 1> mean = out_data[batchnorm::kMean].get<xpu, 1, real_t>(s);
       Tensor<xpu, 1> var = out_data[batchnorm::kVar].get<xpu, 1, real_t>(s);
       CHECK(req[batchnorm::kMean] == kNullOp || req[batchnorm::kMean] == kWriteTo);

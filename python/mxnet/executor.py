@@ -222,6 +222,8 @@ class Executor(object):
         ValueError
             If there is additional parameters in the dict but allow_extra_params=False
         """
+        if arg_params is None:
+            return
         for name, array in arg_params.items():
             if name in self.arg_dict:
                 dst = self.arg_dict[name]
