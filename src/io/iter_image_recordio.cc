@@ -215,8 +215,8 @@ inline void ImageRecordIOParser::Init(
   source_ = dmlc::InputSplit::Create(
       param_.path_imgrec.c_str(), param_.part_index,
       param_.num_parts, "recordio");
-  // use 64 MB chunk when possible
-  source_->HintChunkSize(8 << 20UL);
+  // use 64 MB chunk when possible.
+  source_->HintChunkSize(8 << 23UL);
 #else
   LOG(FATAL) << "ImageRec need opencv to process";
 #endif
