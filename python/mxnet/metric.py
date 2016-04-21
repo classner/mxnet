@@ -141,8 +141,8 @@ class Accuracy(EvalMetric):
             pred_label = ndarray.argmax_channel(preds[i]).asnumpy().astype('int32')
 
             if self._ignore_label is not None:
-                pred_label = pred_label[label != self._ignore_label]
-                label = label[label != self._ignore_label]
+                pred_label = pred_label.flat[label.flat != self._ignore_label]
+                label = label.flat[label.flat != self._ignore_label]
 
             check_label_shapes(label, pred_label)
 
@@ -200,15 +200,20 @@ class F1(EvalMetric):
             pred_label = numpy.argmax(pred, axis=1)
 
             check_label_shapes(label, pred)
-            if len(numpy.unique(label)) > 2:
+            unique_labels = numpy.unique(label)
+            if self._ignore_label is not None:
+                unique_labels = [lbl for lbl in unique_labels if lbl != self._ignore_label]
+            if len(unique_labels) > 2:
                 if self._scoretype == 'binary':
-                    raise ValueError("F1 configured for binary classification!")
+                    raise ValueError(
+                        "F1 configured for binary classification! "
+                        "Occuring labels: %s." % (str(numpy.unique(label))))
                 # Build the confusion matrix.
                 raise NotImplementedError
 
             true_positives, false_positives, false_negatives = 0., 0., 0.
 
-            for y_pred, y_true in zip(pred_label, label):
+            for y_pred, y_true in zip(pred_label.flat, label.flat):
                 if self._ignore_label is not None and y_true == self._ignore_label:
                     continue
                 if y_pred == 1 and y_true == 1:
