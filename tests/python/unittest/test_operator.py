@@ -660,7 +660,7 @@ def test_batchnorm_training():
         data = mx.symbol.Variable('data')
         test = mx.symbol.BatchNorm(data, fix_gamma=False)
 
-        check_numeric_gradient(test, [data_tmp, gamma, beta], [rolling_mean, rolling_std], numeric_eps=1e-3, check_eps=5e-2)
+        check_numeric_gradient(test, [data_tmp, gamma, beta], [rolling_mean, rolling_std], numeric_eps=5e-3, check_eps=5e-2)
 
         # Gamma needs to be fixed at one when fix_gamma is true,
         gamma = np.ones(s)
@@ -698,7 +698,34 @@ def test_convolution_grouping():
     for arr1, arr2 in zip(exe1.outputs + exe1.grad_arrays, exe2.outputs + exe2.grad_arrays):
         np.testing.assert_allclose(arr1.asnumpy(), arr2.asnumpy(), rtol=1e-3)
 
+def test_unpooling():
+    import mxnet.ndarray as mp
+    for shape in [(1, 1, 7, 7), (2, 3, 10, 10)]:
+        np.random.seed(1)
+        # Simulate an earlier pooling operation.
+        data = mx.symbol.Variable('data')
+        pl = mx.symbol.Pooling(data=data,
+                               pool_type='max',
+                               kernel=(2, 2),
+                               stride=(2, 2),
+                               pad=(0, 0), name='pool')
+        upl = mx.symbol.Unpooling(pl, data, pl,
+                                  pool_type='max',
+                                  kernel=(2, 2),
+                                  stride=(2, 2),
+                                  pad=(0, 0), name='unpool')
+        arr = [mp.array(range(np.prod(shape)), dtype='float32').reshape(shape)]
+        arr_grad = [mx.nd.zeros(ar.shape) for ar in arr]
+        check_numeric_gradient(upl,
+                               [arr[0].asnumpy()],
+                               [],
+                               numeric_eps=5e-3,
+                               check_eps=1e-2)
+        return
+
+
 if __name__ == '__main__':
+    test_unpooling()
     test_convolution_grouping()
     test_nearest_upsampling()
     test_binary_op_duplicate_input()
