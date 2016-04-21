@@ -127,15 +127,21 @@ class CompositeEvalMetric(EvalMetric):
 class Accuracy(EvalMetric):
     """Calculate accuracy"""
 
-    def __init__(self):
+    def __init__(self,
+                 ignore_label=None):
         super(Accuracy, self).__init__('accuracy')
+
+        self._ignore_label = ignore_label
 
     def update(self, labels, preds):
         check_label_shapes(labels, preds)
 
-        for i in range(len(labels)):
-            pred_label = ndarray.argmax_channel(preds[i]).asnumpy().astype('int32')
+        for i in range(len(labels)):  # pylint: disable=consider-using-enumerate
             label = labels[i].asnumpy().astype('int32')
+            if self._ignore_label is not None and label == self._ignore_label:
+                continue
+
+            pred_label = ndarray.argmax_channel(preds[i]).asnumpy().astype('int32')
 
             check_label_shapes(label, pred_label)
 
@@ -174,10 +180,15 @@ class TopKAccuracy(EvalMetric):
             self.num_inst += num_samples
 
 class F1(EvalMetric):
-    """Calculate the F1 score of a binary classification problem."""
+    """Calculate the F1 score for a classification problem."""
 
-    def __init__(self):
+    def __init__(self, ignore_label=None, scoretype='binary'):
         super(F1, self).__init__('f1')
+
+        self._ignore_label = ignore_label
+        self._scoretype = scoretype.lower()
+        if self._scoretype not in ['binary', 'micro', 'macro']:
+            raise ValueError("F1 scoretype must be in `binary`, `micro`, `macro`!")
 
     def update(self, labels, preds):
         check_label_shapes(labels, preds)
@@ -189,11 +200,16 @@ class F1(EvalMetric):
 
             check_label_shapes(label, pred)
             if len(numpy.unique(label)) > 2:
-                raise ValueError("F1 currently only supports binary classification.")
+                if self._scoretype == 'binary':
+                    raise ValueError("F1 configured for binary classification!")
+                # Build the confusion matrix.
+                raise NotImplementedError
 
             true_positives, false_positives, false_negatives = 0., 0., 0.
 
             for y_pred, y_true in zip(pred_label, label):
+                if self._ignore_label is not None and y_true == self._ignore_label:
+                    continue
                 if y_pred == 1 and y_true == 1:
                     true_positives += 1.
                 elif y_pred == 1 and y_true == 0:
