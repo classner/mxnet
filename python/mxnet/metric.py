@@ -138,10 +138,11 @@ class Accuracy(EvalMetric):
 
         for i in range(len(labels)):  # pylint: disable=consider-using-enumerate
             label = labels[i].asnumpy().astype('int32')
-            if self._ignore_label is not None and label == self._ignore_label:
-                continue
-
             pred_label = ndarray.argmax_channel(preds[i]).asnumpy().astype('int32')
+
+            if self._ignore_label is not None:
+                pred_label = pred_label[label != self._ignore_label]
+                label = label[label != self._ignore_label]
 
             check_label_shapes(label, pred_label)
 
