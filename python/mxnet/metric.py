@@ -302,8 +302,10 @@ class RMSE(EvalMetric):
 
 class CrossEntropy(EvalMetric):
     """Calculate Cross Entropy loss"""
-    def __init__(self):
+    def __init__(self, ignore_label=None):
         super(CrossEntropy, self).__init__('cross-entropy')
+        
+        self._ignore_label = ignore_label
 
     def update(self, labels, preds):
         check_label_shapes(labels, preds)
@@ -313,9 +315,22 @@ class CrossEntropy(EvalMetric):
             pred = pred.asnumpy()
 
             label = label.ravel()
-            assert label.shape[0] == pred.shape[0]
+            # Make the 'channel' (or the 'class') the last axis.
+            pred = numpy.rollaxis(pred, 1, pred.ndim)
+            # Make it samples X classes.
+            pred = pred.reshape((numpy.prod(pred.shape[:-1]), pred.shape[-1]))
+            
+            if self._ignore_label is not None:
+                pred = pred[label != self._ignore_label, :]
+                label = label[label != self._ignore_label]
 
+            assert label.shape[0] == pred.shape[0]
+            assert label.min() >= 0 and label.max() < pred.shape[1], (
+                "Invalid label detected (min label: %d, max label: %d)!" % (
+                    label.min(), label.max()))
+            
             prob = pred[numpy.arange(label.shape[0]), numpy.int64(label)]
+
             self.sum_metric += (-numpy.log(prob)).sum()
             self.num_inst += label.shape[0]
 
