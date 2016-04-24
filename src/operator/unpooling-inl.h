@@ -17,7 +17,8 @@
 #include <string>
 #include <utility>
 #include "./operator_common.h"
-#include "./guided_pool.h"
+#include "./guided_unpooling.h"
+#include "./guided_pooling.h"
 
 namespace mxnet {
 namespace op {
@@ -25,25 +26,16 @@ namespace op {
 namespace unpool_enum {
   enum UnpoolingOpInputs {kData, kPoolData, kPooledData};
   enum UnpoolingOpOutputs {kOut};
-  enum UnpoolingOpType {kMaxPooling, kAvgPooling, kSumPooling};
 }  // namespace pool_enum
 
 struct UnpoolingParam : public dmlc::Parameter<UnpoolingParam> {
    TShape kernel;
    TShape stride;
    TShape pad;
-   int pool_type;
    DMLC_DECLARE_PARAMETER(UnpoolingParam) {
-     // TODO(bing) change to only set lower bound
      DMLC_DECLARE_FIELD(kernel)
        .set_expect_ndim(2).enforce_nonzero()
        .describe("pooling kernel size: (y, x)");
-
-     DMLC_DECLARE_FIELD(pool_type)
-       .add_enum("max", unpool_enum::kMaxPooling)
-       .add_enum("avg", unpool_enum::kAvgPooling)
-       .add_enum("sum", unpool_enum::kSumPooling)
-       .describe("Pooling type to be applied.");
 
      int stride_shape[] = {1, 1};
      DMLC_DECLARE_FIELD(stride).set_default(TShape(stride_shape, stride_shape + 2))
@@ -57,7 +49,7 @@ struct UnpoolingParam : public dmlc::Parameter<UnpoolingParam> {
    }
  };
 
-template<typename xpu, typename Reducer>
+template<typename xpu>
 class UnpoolingOp : public Operator {
  public:
   explicit UnpoolingOp(UnpoolingParam p) {
@@ -83,31 +75,18 @@ class UnpoolingOp : public Operator {
     mshadow::Shape<2> unpooled_shape = Shape2(pool_data.shape_[2],
                                               pool_data.shape_[3]);
 
-    if (param_.pool_type == unpool_enum::kMaxPooling ||
-        param_.pool_type == unpool_enum::kSumPooling) {
-      Assign(output_data, req[unpool_enum::kOut],
-             crop(unpool<Reducer>(pad(pool_data, param_.pad[0], param_.pad[1]),
-                                  pad(pooled_data, 0, 0),
-                                  pad(data, 0, 0),
-                                  param_.kernel[0],
-                                  param_.kernel[1],
-                                  param_.stride[0]),
-                  unpooled_shape,
-                  param_.pad[0],
-                  param_.pad[1]));
-    } else if (param_.pool_type == unpool_enum::kAvgPooling) {
-      Assign(output_data, req[unpool_enum::kOut],
-             (1.0f / param_.kernel[0] / param_.kernel[1]) *\
-             crop(unpool<Reducer>(pad(pool_data, param_.pad[0], param_.pad[1]),
-                                  pad(pooled_data, 0, 0),
-                                  pad(data, 0, 0),
-                                  param_.kernel[0],
-                                  param_.kernel[1],
-                                  param_.stride[0]),
-                  unpooled_shape,
-                  param_.pad[0],
-                  param_.pad[1]));
-    }
+    Assign(output_data, req[unpool_enum::kOut],
+           crop(guided_unpooling(pad(pool_data, param_.pad[0], param_.pad[1]),
+                                 pad(pooled_data, 0, 0),
+                                 pad(data, 0, 0),
+                                 param_.kernel[0],
+                                 param_.kernel[1],
+                                 param_.stride[0],
+                                 param_.pad[0],
+                                 param_.pad[1]),
+                unpooled_shape,
+                param_.pad[0],
+                param_.pad[1]));
   }
 
   virtual void Backward(const OpContext &ctx,
@@ -127,43 +106,35 @@ class UnpoolingOp : public Operator {
     CHECK_EQ(in_grad.size(), 3);
     // Create inputs.
     Stream<xpu> *s = ctx.get_stream<xpu>();
-    Tensor<xpu, 4> input_grad = in_grad[0].get<xpu, 4, real_t>(s);
     Tensor<xpu, 4> grad = out_grad[unpool_enum::kOut].get<xpu, 4, real_t>(s);
     Tensor<xpu, 4> data_pool = in_data[unpool_enum::kPoolData].get<xpu, 4, real_t>(s);
     Tensor<xpu, 4> data_pooled = in_data[unpool_enum::kPooledData].get<xpu, 4, real_t>(s);
+    Tensor<xpu, 4> input_grad = in_grad[unpool_enum::kData].get<xpu, 4, real_t>(s);
+    Tensor<xpu, 4> input_grad_pd = in_grad[unpool_enum::kPoolData].get<xpu, 4, real_t>(s);
+    Tensor<xpu, 4> input_grad_pdd = in_grad[unpool_enum::kPooledData].get<xpu, 4, real_t>(s);
 
+    // Zero the gradients to unaffected data.
+    Assign(input_grad_pd, req[unpool_enum::kPoolData],
+           ScalarExp<float>(0.f));
+    Assign(input_grad_pdd, req[unpool_enum::kPooledData],
+           ScalarExp<float>(0.f));
+
+    // Backward calculation for the input.
     mshadow::Shape<2> pooled_shape = Shape2(data_pooled.shape_[2],
                                             data_pooled.shape_[3]);
-
-    if (param_.pool_type == unpool_enum::kMaxPooling ||
-        param_.pool_type == unpool_enum::kSumPooling) {
-      Assign(input_grad, req[unpool_enum::kOut],
-             crop(guided_pool<Reducer>(pad(data_pool, param_.pad[0], param_.pad[1]),
-                                       pad(data_pooled, 0, 0),
-                                       pad(grad, param_.pad[0], param_.pad[1]),
-                                       param_.kernel[0],
-                                       param_.kernel[1],
-                                       param_.stride[0],
-                                       param_.pad[0],
-                                       param_.pad[1]),
-                  pooled_shape,
-                  param_.pad[0],
-                  param_.pad[1]));
-    } else if (param_.pool_type == unpool_enum::kAvgPooling) {
-      Assign(input_grad, req[unpool_enum::kData],
-             (1.0f / param_.kernel[0] / param_.kernel[1]) *\
-             crop(guided_pool<Reducer>(pad(data_pool, param_.pad[0], param_.pad[1]),
-                                       pad(data_pooled, 0, 0),
-                                       pad(grad, param_.pad[0], param_.pad[1]),
-                                       param_.kernel[0],
-                                       param_.kernel[1],
-                                       param_.stride[0],
-                                       param_.pad[0],
-                                       param_.pad[1]),
-                  pooled_shape,
-                  param_.pad[0],
-                  param_.pad[1]));
-    }
+    Assign(input_grad, req[unpool_enum::kData],
+           crop(
+                guided_pooling(pad(data_pool, param_.pad[0], param_.pad[1]),
+                               pad(data_pooled, 0, 0),
+                               pad(grad, param_.pad[0], param_.pad[1]),
+                               param_.kernel[0],
+                               param_.kernel[1],
+                               param_.stride[0],
+                               param_.pad[0],
+                               param_.pad[1]),
+                pooled_shape,
+                param_.pad[0],
+                param_.pad[1]));
   }
 
  private:
@@ -233,10 +204,10 @@ class UnpoolingProp : public OperatorProperty {
     const std::vector<int> &in_data,
     const std::vector<int> &out_data) const override {
     return {
-        out_grad[0],
-        in_data[1],
-        in_data[2],
-        };
+        out_grad[unpool_enum::kData],
+        in_data[unpool_enum::kPoolData],
+        in_data[unpool_enum::kPooledData],
+      };
   }
 
   std::vector<std::pair<int, void*> > BackwardInplaceOption(
