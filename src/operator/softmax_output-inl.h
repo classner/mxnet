@@ -100,12 +100,15 @@ class SoftmaxOutputOp : public Operator {
           out_data[softmaxout_enum::kOut].get_with_shape<xpu, 3, DType>(s3, s);
       Tensor<xpu, 3, DType> grad =
           in_grad[softmaxout_enum::kData].get_with_shape<xpu, 3, DType>(s3, s);
+      index_t point_count;
       if (param_.use_ignore) {
-          SoftmaxGrad(grad, out, label, static_cast<DType>(param_.ignore_label));
+          SoftmaxGrad(grad, out, label, static_cast<DType>(param_.ignore_label),
+                      &point_count);
       } else {
           SoftmaxGrad(grad, out, label);
+          point_count = s3[2];
       }
-      grad *= DType(param_.grad_scale/s3[2]);
+      grad *= DType(param_.grad_scale / static_cast<float>(point_count));
     } else {
       Tensor<xpu, 1, DType> label = in_data[softmaxout_enum::kLabel].get<xpu, 1, DType>(s);
       Tensor<xpu, 2, DType> out = out_data[softmaxout_enum::kOut].FlatTo2D<xpu, DType>(s);

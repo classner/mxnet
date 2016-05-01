@@ -17,6 +17,7 @@
 #include <string>
 #include <utility>
 #include "./operator_common.h"
+#include "./guided_unpooling.h"
 
 namespace mxnet {
 namespace op {
@@ -122,7 +123,20 @@ class PoolingOp : public Operator {
 
     mshadow::Shape<2> in_shape = Shape2(data.shape_[2], data.shape_[3]);
 
-    if (param_.pool_type == pool_enum::kMaxPooling || param_.pool_type == pool_enum::kSumPooling) {
+    if (param_.pool_type == pool_enum::kMaxPooling) {
+      Assign(input_grad, req[pool_enum::kData],
+             crop(guided_unpooling(pad(data, param_.pad[0], param_.pad[1]),
+                                   pad(output_data, 0, 0),
+                                   pad(grad, 0, 0),
+                                   param_.kernel[0],
+                                   param_.kernel[1],
+                                   param_.stride[0],
+                                   param_.pad[0],
+                                   param_.pad[1]),
+                  in_shape,
+                  param_.pad[0],
+                  param_.pad[1]));
+    } else if (param_.pool_type == pool_enum::kSumPooling) {
       Assign(input_grad, req[pool_enum::kData],
              crop(unpool<Reducer>(pad(data, param_.pad[0], param_.pad[1]),
                                   pad(output_data, 0, 0),
