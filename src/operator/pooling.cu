@@ -14,7 +14,7 @@ namespace mxnet {
 namespace op {
 template<>
 Operator *CreateOp<gpu>(PoolingParam param) {
-#if MXNET_USE_CUDNN == 1
+#if MXNET_USE_CUDNN == 1 && false
   return new CuDNNPoolingOp(param);
 #else
   switch (param.pool_type) {
