@@ -152,10 +152,12 @@ class SoftmaxOutputProp : public OperatorProperty {
     if (param_.multi_output) {
       const TShape &lshape = in_shape->at(softmaxout_enum::kLabel);
       const TShape &dshape_n = Shape2(dshape[0], dshape.Size()/dshape[0]/dshape[1]);
-      TShape l_normalized = Shape2(lshape[0], lshape.Size() / lshape[0] / lshape[1]);
-      CHECK_EQ(l_normalized[0], dshape_n[0]) << "NSamples of labels and outputs must agree!";
-      CHECK_EQ(l_normalized[1], dshape_n[1]) << "Number of normalized softmax points must agree! "
-            << l_normalized[1] << ", " << dshape_n[1];
+      CHECK_EQ(lshape[0], dshape_n[0]) <<
+        "NSamples of labels and outputs must agree: " <<
+        lshape[0] << ", " << dshape_n[0] << "\n";
+      CHECK_EQ(lshape.Size() / lshape[0], dshape_n[1]) <<
+        "Number of normalized softmax points must agree! "
+        << (lshape.Size() / lshape[1]) << ", " << dshape_n[1];
     } else {
       SHAPE_ASSIGN_CHECK(*in_shape, softmaxout_enum::kLabel, Shape1(dshape[0]));
     }
